@@ -17,8 +17,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: tools/ci/install-python-deps
-      - run: tools/ci/test-eval-openskill
+      - run: |
+          tools/ci/install-python-deps
+          tools/ci/test-eval-openskill
 
   lint:
     name: Lint
