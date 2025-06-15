@@ -24,6 +24,22 @@ from openskill.models import MODELS
 
 EVAL_SCHEMA_PATH = "schema.json"
 
+JsonObj = Dict[str, Any]
+OrdinalResult = float
+PredictDrawResult = float
+PredictRankResult = List[[int, float]]
+PredictWinResult = List[float]
+Rating = Dict[str, float]
+RateResult = List[List[Rating]]
+
+
+def _build_teams(model_instance, raw_teams):
+    """Build ratings from provided team and player data."""
+    return [
+        [model_instance.rating(p["mu"], p["sigma"]) for p in team]
+        for team in raw_teams
+    ]
+
 
 def _get_model(name: str) -> Any:
     """Obtain a model object from its class name."""
@@ -32,6 +48,39 @@ def _get_model(name: str) -> Any:
             return model
     
     raise Exception(f"Unknown model '{name}'")
+
+
+def _unpack_ordinal(result: float) -> OrdinalResult:
+    """Convert ordinal result to JSON-serializable float."""
+    return result
+
+
+def _unpack_predict_draw(result: float) -> PredictDrawResult:
+    """Convert predict_draw result to JSON-serializable float."""
+    return result
+
+
+def _unpack_predict_rank(result: List[tuple[int, float]]) -> PredictRankResult:
+    """Convert predict_rank result to JSON-serializable nested lists."""
+    return [[rank, round(prob, 6)] for rank, prob in result]
+
+
+def _unpack_predict_win(result: List[float]) -> PredictWinResult:
+    """Convert predict_win result to JSON-serializable list."""
+    return result
+
+
+def _unpack_rate(result) -> RateResult:
+    """Convert nested rating list to JSON-serializable structure."""
+    return [[_unpack_rating(r) for r in team] for team in result]
+
+
+def _unpack_rating(rating) -> Rating:
+    """Convert a single rating object to dict."""
+    return {
+        "mu": round(rating.mu, 6),
+        "sigma": round(rating.sigma, 6)
+    }
 
 
 def _validate_models(openskill_models: List[str]) -> bool:
@@ -61,7 +110,7 @@ def _validate_models(openskill_models: List[str]) -> bool:
     return all_ok
 
 
-def _validate_params(request: Dict[str, Any]) -> bool:
+def _validate_params(request: JsonObj) -> bool:
     """Determine if the `params` provided are appropriate for the `model` specified."""
     # if algorithm parameters were not provided, we're good
     if "params" not in request:
@@ -83,7 +132,7 @@ def _validate_params(request: Dict[str, Any]) -> bool:
     return True
 
 
-def _validate_req(request: Dict[str, Any], schema: Dict[str, Any]) -> bool:
+def _validate_req(request: JsonObj, schema: JsonObj) -> bool:
     """Determine if the provided `request` is a valid OpenSkill evaluation request."""
     try:
         jsonschema.validate(request, schema)
@@ -103,7 +152,7 @@ def _validate_req(request: Dict[str, Any], schema: Dict[str, Any]) -> bool:
     return True
 
 
-def _validate_shape(request: Dict[str, Any]) -> bool:
+def _validate_shape(request: JsonObj) -> bool:
     """
     Determine if the `ranks`, `scores`, and `weights` parameters match the shape of
     the `teams` parameter for a `rate` request.
@@ -136,27 +185,88 @@ def _validate_shape(request: Dict[str, Any]) -> bool:
     return True
 
 
-# def _try_something():
-#     # "BradleyTerryFull",
-#     # "BradleyTerryPart",
-#     # "PlackettLuce",
-#     # "ThurstoneMostellerFull",
-#     # "ThurstoneMostellerPart"
-#     model = _get_model("PlackettLuce")()
-#     p1 = model.rating(15.0, 0.000001)
-#     print(p1)
-#     p2 = model.rating(25.0, 0.000001)
-#     print(p2)
-#     p3 = model.rating(35.0, 0.000001)
-#     print(p3)
-#     p4 = model.rating(45.0, 0.000001)
-#     print(p4)
-#     result = model.predict_draw([[p1, p2], [p3, p4]])
-#     print(result)
-#     result = model.predict_draw([[p1, p3], [p2, p4]])
-#     print(result)
-#     result = model.predict_draw([[p1, p4], [p2, p3]])
-#     print(result)
+def do_ordinal(request: JsonObj) -> OrdinalResult:
+    model_class = _get_model(request["model"])
+    model_instance = model_class(**request.get("params", {}))
+
+    rating_data = request["data"].get("rating", {})
+    rating = model_instance.rating(
+        rating_data.get("mu", 25.0),
+        rating_data.get("sigma", 25.0 / 3.0)
+    )
+
+    z = request["data"].get("z", 3.0)
+    alpha = request["data"].get("alpha", 1.0)
+    target = request["data"].get("target", 0.0)
+
+    return _unpack_ordinal(rating.ordinal(z=z, alpha=alpha, target=target))
+
+
+def do_predict_draw(request: JsonObj) -> PredictDrawResult:
+    model_class = _get_model(request["model"])
+    model_instance = model_class(**request.get("params", {}))
+
+    raw_teams = request["data"]["teams"]
+    input_teams = _build_teams(model_instance, raw_teams)
+
+    return _unpack_predict_draw(model_instance.predict_draw(input_teams))
+
+
+def do_predict_rank(request: JsonObj) -> PredictRankResult:
+    model_class = _get_model(request["model"])
+    model_instance = model_class(**request.get("params", {}))
+
+    raw_teams = request["data"]["teams"]
+    input_teams = _build_teams(model_instance, raw_teams)
+
+    return _unpack_predict_rank(model_instance.predict_rank(input_teams))
+
+
+def do_predict_win(request: JsonObj) -> PredictWinResult:
+    model_class = _get_model(request["model"])
+    model_instance = model_class(**request.get("params", {}))
+
+    raw_teams = request["data"]["teams"]
+    input_teams = _build_teams(model_instance, raw_teams)
+
+    return _unpack_predict_win(model_instance.predict_win(input_teams))
+
+
+def do_rate(request: JsonObj) -> RateResult:
+    """Evaluate the rate() call for the provided request."""
+    model_class = _get_model(request["model"])
+
+    model_instance = model_class(**request.get("params", {}))
+
+    raw_teams = request["data"]["teams"]
+    input_teams = _build_teams(model_instance, raw_teams)
+
+    extra_args = {
+        k: request["data"][k]
+        for k in ("ranks", "scores", "weights", "tau", "limit_sigma")
+        if k in request["data"]
+    }
+
+    return _unpack_rate(model_instance.rate(input_teams, **extra_args))
+
+
+def eval_request(request: JsonObj) -> Any:
+    """Evaluate the request against OpenSkill."""
+    match request["func"]:
+        case "ordinal":
+            result = do_ordinal(request)
+        case "predict_draw":
+            result = do_predict_draw(request)
+        case "predict_rank":
+            result = do_predict_rank(request)
+        case "predict_win":
+            result = do_predict_win(request)
+        case "rate":
+            result = do_rate(request)
+        case _:
+            raise ValueError(f"Unknown function: {func}")
+
+    return result
 
 
 def main():
@@ -171,9 +281,8 @@ def main():
     if not _validate_req(request, schema):
         sys.exit(1)
 
-    # _try_something()
-
-    print("evaluation complete")
+    result = eval_request(request)
+    print(json.dumps({ "result": result }))
 
 
 if __name__ == "__main__":
