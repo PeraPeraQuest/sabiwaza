@@ -1,0 +1,2 @@
+jsonschema==4.24.0
+openskill==6.1.1

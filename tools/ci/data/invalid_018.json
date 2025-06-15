@@ -1,0 +1,7 @@
+{
+    "model": "ThurstoneMostellerFull",
+    "func": "predict_win",
+    "data": {
+        "teams": []
+    }
+}

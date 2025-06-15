@@ -1,0 +1,9 @@
+{
+    "model": "BradleyTerryPart",
+    "func": "predict_rank",
+    "data": {
+        "teams": [
+            [ { "mu": 25.0, "sigma": 8.333 } ]
+        ]
+    }
+}

@@ -1,0 +1,9 @@
+{
+    "model": "PlackettLuce",
+    "func": "ordinal",
+    "data": {
+        "rating": {
+            "hope": 0.5
+        }
+    }
+}

@@ -1,0 +1,10 @@
+{
+    "model": "PlackettLuce",
+    "func": "ordinal",
+    "data": {
+        "rating": {
+            "mu": 25.0,
+            "sigma": 8.3333
+        }
+    }
+}

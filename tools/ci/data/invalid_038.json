@@ -1,0 +1,13 @@
+{
+    "model": "ThurstoneMostellerFull",
+    "func": "rate",
+    "data": {
+        "teams": [
+            [{"mu": 25.0, "sigma": 8.333}],
+            [{"mu": 25.0, "sigma": 8.333}]
+        ]
+    },
+    "params": {
+        "gamma": "custom gamma function"
+    }
+}

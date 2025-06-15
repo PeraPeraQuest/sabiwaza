@@ -1,0 +1,237 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+        "model": {
+            "type": "string",
+            "enum": [
+                "BradleyTerryFull",
+                "BradleyTerryPart",
+                "PlackettLuce",
+                "ThurstoneMostellerFull",
+                "ThurstoneMostellerPart"
+            ]
+        },
+        "func": {
+            "type": "string",
+            "enum": [
+                "ordinal",
+                "predict_draw",
+                "predict_rank",
+                "predict_win",
+                "rate"
+            ]
+        },
+        "params": {
+            "type": "object",
+            "properties": {
+                "mu": {
+                    "type": "number"
+                },
+                "sigma": {
+                    "type": "number"
+                },
+                "beta": {
+                    "type": "number"
+                },
+                "kappa": {
+                    "type": "number"
+                },
+                "tau": {
+                    "type": "number"
+                },
+                "margin": {
+                    "type": "number"
+                },
+                "window_size": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "limit_sigma": {
+                    "type": "boolean"
+                },
+                "balance": {
+                    "type": "boolean"
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        },
+        "data": {
+            "type": "object"
+        }
+    },
+    "required": [
+        "model",
+        "func",
+        "data"
+    ],
+    "additionalProperties": false,
+    "allOf": [
+        {
+            "if": {
+                "properties": {
+                    "func": {
+                        "const": "ordinal"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "rating": {
+                                "type": "object",
+                                "properties": {
+                                    "mu": {
+                                        "type": "number"
+                                    },
+                                    "sigma": {
+                                        "type": "number"
+                                    }
+                                },
+                                "required": [],
+                                "additionalProperties": false
+                            },
+                            "z": {
+                                "type": "number"
+                            },
+                            "alpha": {
+                                "type": "number"
+                            },
+                            "target": {
+                                "type": "number"
+                            }
+                        },
+                        "required": [],
+                        "additionalProperties": false
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "func": {
+                        "const": "rate"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "teams": {
+                                "type": "array",
+                                "minItems": 2,
+                                "items": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "mu": {
+                                                "type": "number"
+                                            },
+                                            "sigma": {
+                                                "type": "number"
+                                            }
+                                        },
+                                        "required": [
+                                            "mu",
+                                            "sigma"
+                                        ],
+                                        "additionalProperties": false
+                                    }
+                                }
+                            },
+                            "ranks": {
+                                "type": "array",
+                                "items": {
+                                    "type": "number"
+                                }
+                            },
+                            "scores": {
+                                "type": "array",
+                                "items": {
+                                    "type": "number"
+                                }
+                            },
+                            "weights": {
+                                "type": "array",
+                                "items": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "number"
+                                    }
+                                }
+                            },
+                            "tau": {
+                                "type": "number"
+                            },
+                            "limit_sigma": {
+                                "type": "boolean"
+                            }
+                        },
+                        "required": [
+                            "teams"
+                        ],
+                        "additionalProperties": false
+                    }
+                }
+            }
+        },
+        {
+            "if": {
+                "properties": {
+                    "func": {
+                        "enum": [
+                            "predict_win",
+                            "predict_draw",
+                            "predict_rank"
+                        ]
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "data": {
+                        "type": "object",
+                        "properties": {
+                            "teams": {
+                                "type": "array",
+                                "minItems": 2,
+                                "items": {
+                                    "type": "array",
+                                    "minItems": 1,
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "mu": {
+                                                "type": "number"
+                                            },
+                                            "sigma": {
+                                                "type": "number"
+                                            }
+                                        },
+                                        "required": [
+                                            "mu",
+                                            "sigma"
+                                        ],
+                                        "additionalProperties": false
+                                    }
+                                }
+                            }
+                        },
+                        "required": [
+                            "teams"
+                        ],
+                        "additionalProperties": false
+                    }
+                }
+            }
+        }
+    ]
+}

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# test-eval-openskill
+
+set -e
+echo "Running tests for eval_openskill.py..."
+
+failed=0
+
+for file in tools/ci/data/invalid_*.json; do
+    if python tools/ci/python/eval_openskill.py <"$file" 1>/dev/null 2>/dev/null; then
+        echo "::error file=$file::Unexpected success (should have failed)"
+        failed=1
+    else
+        echo "✅ $file failed as expected"
+    fi
+done
+
+for file in tools/ci/data/valid_*.json; do
+    if python tools/ci/python/eval_openskill.py <"$file" 1>/dev/null 2>/dev/null; then
+        echo "✅ $file succeeded as expected"
+    else
+        echo "::error file=$file::Unexpected failure (should have succeeded)"
+        failed=1
+    fi
+done
+
+if [ "$failed" -ne 0 ]; then
+    echo "⁉️  Some tests had unexpected results"
+    exit 1
+else
+    echo "✅ All tests passed with expected results"
+fi
