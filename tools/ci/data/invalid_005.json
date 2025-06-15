@@ -1,0 +1,7 @@
+{
+    "model": "PlackettLuce",
+    "func": "ordinal",
+    "data": {
+        "pony": "shetland"
+    }
+}

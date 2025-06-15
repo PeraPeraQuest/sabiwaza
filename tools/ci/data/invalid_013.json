@@ -1,0 +1,7 @@
+{
+    "model": "BradleyTerryPart",
+    "func": "predict_rank",
+    "data": {
+        "teams": []
+    }
+}
