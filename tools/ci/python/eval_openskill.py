@@ -78,8 +78,8 @@ def _unpack_rate(result) -> RateResult:
 def _unpack_rating(rating) -> Rating:
     """Convert a single rating object to dict."""
     return {
-        "mu": round(rating.mu, 6),
-        "sigma": round(rating.sigma, 6)
+        "mu": rating.mu,
+        "sigma": rating.sigma,
     }
 
 
@@ -282,7 +282,7 @@ def main():
         sys.exit(1)
 
     result = eval_request(request)
-    print(json.dumps({ "result": result }))
+    print(json.dumps({ "result": result }, indent=4))
 
 
 if __name__ == "__main__":
