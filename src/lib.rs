@@ -1,4 +1,4 @@
-// test_openskill.rs
+// lib.rs
 // Copyright 2025 Patrick Meade
 //
 // This program is free software: you can redistribute it and/or modify
@@ -14,7 +14,21 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-#[test]
-fn test_always_succeed() {
-    assert!(true);
+pub mod algorithm;
+pub mod error;
+pub mod rating;
+
+pub use algorithm::SkillAlgorithm;
+pub use rating::SkillRating;
+
+// -------------------------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_always_succeed() {
+        assert!(true);
+    }
 }
