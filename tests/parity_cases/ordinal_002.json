@@ -1,0 +1,11 @@
+{
+    "model": "BradleyTerryFull",
+    "func": "ordinal",
+    "data": {
+        "rating": { "mu": 27.0, "sigma": 5.0 },
+        "z": 2.5,
+        "alpha": 1.0,
+        "target": 0.0
+    },
+    "result": 14.5
+}
