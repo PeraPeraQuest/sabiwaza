@@ -295,9 +295,13 @@ fn run_rust_rate(model: &SkillAlgorithm, data: &Value) -> Value {
     }
 
     // Compute results
+    let disp_teams = teams.clone();
+    let disp_ranks = ranks.clone();
+    let disp_scores = scores.clone();
+    let disp_weights = weights.clone();
     let new_teams = model
         .rate(&teams, ranks, scores, weights)
-        .expect("expected rate");
+        .expect(&format!("rate() -- \nteams:{disp_teams:#?}\nranks:{disp_ranks:#?}\nscores:{disp_scores:#?}\nweights:{disp_weights:#?}\n"));
 
     // Format as JSON
     let json_result = json!(

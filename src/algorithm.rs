@@ -145,6 +145,14 @@ impl SkillAlgorithm {
             weights = Some(normalized_weights);
         }
 
+        // DEBUG: ranks and scores
+        if let Some(ref ranks) = ranks {
+            println!("Computed Ranks (Rust): {:?}", ranks);
+            if let Some(score_vec) = &scores {
+                println!("From Scores: {:?}", score_vec);
+            }
+        }
+
         // unwind stuff that needs to be unwound (??)
         let mut tenet = None;
         if let Some(some_ranks) = ranks.take() {
@@ -174,15 +182,21 @@ impl SkillAlgorithm {
             self.beta,
             self.margin,
             self.kappa,
+            self.balance,
         );
 
         // If we need to unwind result to match original sort order
-        let processed_result = if let Some(ref original_tenet) = tenet {
-            let (unwound_result, _) = _unwind(original_tenet, &result);
-            unwound_result
+        let processed_result = if let Some(ref original_indices) = tenet {
+            let restored = _restore_order(result, original_indices.clone());
+            // println!("restored_result: {restored:#?}");
+            restored
         } else {
+            // println!("result: {result:#?}");
             result
         };
+
+        // println!("original_teams: {original_teams:#?}");
+        // println!("processed_result: {processed_result:#?}");
 
         // Possible Final Result
         let final_result = match self.limit_sigma {
@@ -348,11 +362,12 @@ fn _check_weights(weights: &Option<Vec<Vec<f64>>>, teams: &[Vec<SkillRating>]) -
             );
             return Err(SabiwazaError::ValueError(msg));
         }
-        for (index, weight) in weights.iter().enumerate() {
-            let num_weights = weight.len();
-            if num_weights != teams[index].len() {
+        for (index, weight) in weights.as_ref().unwrap().iter().enumerate() {
+            let num_weight = weight.len();
+            let num_players = teams[index].len();
+            if num_weight != num_players {
                 let msg = format!(
-                    "Argument 'weights' must have the same number of elements as each team in 'teams', not {num_weights}."
+                    "Argument 'weights' must have the same number of elements as each team in 'teams'; index:{index} num_players:{num_players} num_weight:{num_weight} weight:{weight:#?}."
                 );
                 return Err(SabiwazaError::ValueError(msg));
             }
@@ -362,7 +377,7 @@ fn _check_weights(weights: &Option<Vec<Vec<f64>>>, teams: &[Vec<SkillRating>]) -
     Ok(())
 }
 
-pub fn _compute(
+fn _compute(
     teams: &[Vec<SkillRating>],
     ranks: Option<&[f64]>,
     scores: Option<&[f64]>,
@@ -370,10 +385,8 @@ pub fn _compute(
     beta: f64,
     margin: f64,
     kappa: f64,
+    balance: bool,
 ) -> Vec<Vec<SkillRating>> {
-    let mut result: Vec<Vec<SkillRating>> = Vec::with_capacity(teams.len());
-
-    // Compute team-level mu, sigma², and rank
     struct TeamInfo {
         mu: f64,
         sigma_squared: f64,
@@ -381,10 +394,28 @@ pub fn _compute(
         team: Vec<SkillRating>,
     }
 
-    let mut team_infos: Vec<TeamInfo> = Vec::with_capacity(teams.len());
+    let mut team_infos = Vec::with_capacity(teams.len());
+
     for (i, team) in teams.iter().enumerate() {
-        let mu: f64 = team.iter().map(|p| p.mu).sum();
-        let sigma_squared: f64 = team.iter().map(|p| p.sigma.powi(2)).sum();
+        let (mu, sigma_squared) = if balance {
+            let mu = team.iter().map(|p| p.mu).sum::<f64>() / team.len() as f64;
+            let sigma_squared = team
+                .iter()
+                .map(|p| p.sigma.powi(2))
+                .sum::<f64>()
+                / (team.len() * team.len()) as f64;
+            (mu, sigma_squared)
+        } else {
+            let mut mu = 0.0;
+            let mut sigma_sq_sum = 0.0;
+            for (j, player) in team.iter().enumerate() {
+                let weight = weights.map_or(1.0, |w| w[i][j]);
+                mu += player.mu * weight;
+                sigma_sq_sum += player.sigma.powi(2) * weight.powi(2);
+            }
+            (mu, sigma_sq_sum)
+        };
+
         let rank = ranks.map_or(i, |r| r[i] as usize);
         team_infos.push(TeamInfo {
             mu,
@@ -395,41 +426,34 @@ pub fn _compute(
     }
 
     let mut score_map = HashMap::new();
-    if let Some(score_vec) = scores {
-        if score_vec.len() == team_infos.len() {
-            for (i, score) in score_vec.iter().enumerate() {
-                score_map.insert(i, *score);
-            }
+    if let Some(scores) = scores {
+        for (i, &score) in scores.iter().enumerate() {
+            score_map.insert(i, score);
         }
     }
 
-    let mut rank_groups: HashMap<usize, Vec<usize>> = HashMap::new();
-    for (i, team) in team_infos.iter().enumerate() {
-        rank_groups.entry(team.rank).or_default().push(i);
-    }
+    let mut result: Vec<Vec<SkillRating>> = Vec::with_capacity(teams.len());
 
     for (i, team_i) in team_infos.iter().enumerate() {
         let mut omega = 0.0;
         let mut delta = 0.0;
 
         for (q, team_q) in team_infos.iter().enumerate() {
-            if q == i {
+            if i == q {
                 continue;
             }
 
             let mut margin_factor = 1.0;
-            if let Some(score_i) = score_map.get(&i) {
-                if let Some(score_q) = score_map.get(&q) {
-                    let score_diff = (score_i - score_q).abs();
-                    if score_diff > 0.0 && team_q.rank < team_i.rank && margin > 0.0 {
-                        margin_factor = (1.0 + score_diff / margin).ln();
-                    }
+            if let (Some(&score_i), Some(&score_q)) = (score_map.get(&i), score_map.get(&q)) {
+                let score_diff = (score_i - score_q).abs();
+                if score_diff > 0.0 && team_q.rank < team_i.rank && margin > 0.0 {
+                    margin_factor = (1.0 + score_diff / margin).ln();
                 }
             }
 
             let c_iq = (team_i.sigma_squared + team_q.sigma_squared + 2.0 * beta.powi(2)).sqrt();
             let piq = 1.0 / (1.0 + ((team_q.mu - team_i.mu) * margin_factor / c_iq).exp());
-            let sigma_sq_c = team_i.sigma_squared / c_iq;
+            let sigma_sq_over_c = team_i.sigma_squared / c_iq;
 
             let s = if team_q.rank > team_i.rank {
                 1.0
@@ -439,13 +463,14 @@ pub fn _compute(
                 0.0
             };
 
-            omega += sigma_sq_c * (s - piq);
+            omega += sigma_sq_over_c * (s - piq);
 
             let gamma = team_i.sigma_squared.sqrt() / c_iq;
-            delta += (gamma * sigma_sq_c / c_iq) * piq * (1.0 - piq);
+            delta += (gamma * sigma_sq_over_c / c_iq) * piq * (1.0 - piq);
         }
 
-        let mut new_team: Vec<SkillRating> = Vec::with_capacity(team_i.team.len());
+        let mut new_team = Vec::with_capacity(team_i.team.len());
+
         for (j, player) in team_i.team.iter().enumerate() {
             let weight = weights.map_or(1.0, |w| w[i][j]);
             let sigma_sq = player.sigma.powi(2);
@@ -456,21 +481,26 @@ pub fn _compute(
                 player.mu + (sigma_sq / team_i.sigma_squared) * omega / weight
             };
 
-            let sigma_scale = if omega >= 0.0 {
+            let scale = if omega >= 0.0 {
                 1.0 - (sigma_sq / team_i.sigma_squared) * delta * weight
             } else {
                 1.0 - (sigma_sq / team_i.sigma_squared) * delta / weight
             };
 
-            let sigma = player.sigma * sigma_scale.max(kappa).sqrt();
+            let sigma = player.sigma * scale.max(kappa).sqrt();
             new_team.push(SkillRating::new(mu, sigma));
         }
 
         result.push(new_team);
     }
 
-    // Adjust for tied ranks
-    for (_, indices) in rank_groups {
+    // Average μ shift for tied ranks
+    let mut rank_groups: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (i, team_info) in team_infos.iter().enumerate() {
+        rank_groups.entry(team_info.rank).or_default().push(i);
+    }
+
+    for (_rank, indices) in rank_groups {
         if indices.len() > 1 {
             let avg_mu_change: f64 = indices
                 .iter()
@@ -493,9 +523,42 @@ fn _convert_scores_to_ranks(
     teams: &[Vec<SkillRating>],
     scores: &Option<Vec<f64>>,
 ) -> Option<Vec<f64>> {
-    let scores = scores.as_ref().unwrap();
-    let ranks = scores.iter().map(|s| -s).collect();
-    let ranks = _calculate_rankings(teams, ranks);
+    let scores = scores.as_ref()?;
+    if scores.len() != teams.len() {
+        return None;
+    }
+
+    // Pair scores with original indices
+    let mut indexed_scores: Vec<(usize, f64)> = scores.iter().enumerate().map(|(i, &s)| (i, s)).collect();
+
+    // Sort descending: higher score = better rank
+    indexed_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let mut ranks = vec![0.0; scores.len()];
+    let mut current_rank = 0.0;
+    let mut i = 0;
+
+    while i < indexed_scores.len() {
+        let start = i;
+        let score = indexed_scores[i].1;
+
+        // Group tied scores
+        while i < indexed_scores.len() && (indexed_scores[i].1 - score).abs() < 1e-8 {
+            i += 1;
+        }
+
+        // Average rank for ties
+        let group_size = i - start;
+        let avg_rank = current_rank + (group_size as f64 - 1.0) / 2.0;
+
+        for j in start..i {
+            let team_index = indexed_scores[j].0;
+            ranks[team_index] = avg_rank;
+        }
+
+        current_rank += group_size as f64;
+    }
+
     Some(ranks)
 }
 
@@ -543,31 +606,59 @@ fn _normalize(vector: &[f64], target_minimum: f64, target_maximum: f64) -> Vec<f
         .collect()
 }
 
+fn _restore_order<T: Clone>(sorted: Vec<T>, indices: Vec<usize>) -> Vec<T> {
+    let mut restored = vec![None; sorted.len()];
+    for (sorted_idx, &original_idx) in indices.iter().enumerate() {
+        restored[original_idx] = Some(sorted[sorted_idx].clone());
+    }
+    restored.into_iter().map(Option::unwrap).collect()
+}
+
 /// Reorders `objects` according to the values in `tenet`, and returns:
 /// - The sorted `objects`
 /// - The reordered `tenet` values used for restoring the original order
-fn _unwind<T: Clone>(tenet: &[f64], objects: &[T]) -> (Vec<T>, Vec<f64>) {
-    // Build a Vec of (tenet_value, object, index)
-    let mut zipped: Vec<(f64, T, usize)> = tenet
+
+// fn _unwind<T: Clone>(tenet: &[f64], objects: &[T]) -> (Vec<T>, Vec<f64>) {
+//     // Build a Vec of (tenet_value, object, index)
+//     let mut zipped: Vec<(f64, T, usize)> = tenet
+//         .iter()
+//         .cloned()
+//         .zip(objects.iter().cloned())
+//         .enumerate()
+//         .map(|(i, (t, o))| (t, o, i))
+//         .collect();
+
+//     // Sort by tenet ascending, break ties with original index for stability
+//     zipped.sort_by(|a, b| {
+//         a.0.partial_cmp(&b.0)
+//             .unwrap_or(std::cmp::Ordering::Equal)
+//             .then_with(|| a.2.cmp(&b.2))
+//     });
+
+//     // Extract the sorted objects and their reordered tenet values
+//     let sorted_objects = zipped.iter().map(|(_, obj, _)| obj.clone()).collect();
+//     let reordered_tenets = zipped.iter().map(|(t, _, _)| *t).collect();
+
+//     (sorted_objects, reordered_tenets)
+// }
+
+fn _unwind<T: Clone>(
+    tenet: &[f64],
+    data: &[T],
+) -> (Vec<T>, Vec<usize>) {
+    let mut combined: Vec<(f64, usize, T)> = tenet
         .iter()
-        .cloned()
-        .zip(objects.iter().cloned())
         .enumerate()
-        .map(|(i, (t, o))| (t, o, i))
+        .map(|(i, &t)| (t, i, data[i].clone()))
         .collect();
 
-    // Sort by tenet ascending, break ties with original index for stability
-    zipped.sort_by(|a, b| {
-        a.0.partial_cmp(&b.0)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.2.cmp(&b.2))
-    });
+    // Sort by tenet value (lowest to highest)
+    combined.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
-    // Extract the sorted objects and their reordered tenet values
-    let sorted_objects = zipped.iter().map(|(_, obj, _)| obj.clone()).collect();
-    let reordered_tenets = zipped.iter().map(|(t, _, _)| *t).collect();
+    let sorted_data = combined.iter().map(|(_, _, item)| item.clone()).collect();
+    let original_indices = combined.iter().map(|(_, idx, _)| *idx).collect();
 
-    (sorted_objects, reordered_tenets)
+    (sorted_data, original_indices)
 }
 
 // -------------------------------------------------------------------------------------------------------------------
